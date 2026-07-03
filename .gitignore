@@ -1,0 +1,13 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+*.xcodeproj
+Package.resolved
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Env / secrets — never commit BUGSNAG_KEY
+.env
+.env.*
