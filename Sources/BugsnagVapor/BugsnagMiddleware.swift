@@ -17,6 +17,12 @@ import Vapor
 /// (`"GET /path"`) when the request enters the pipeline, so every event
 /// carries at least the incoming request in its breadcrumb trail. Pass
 /// `automaticRequestBreadcrumb: false` to disable.
+///
+/// When `autoCaptureSessions` is enabled (the default), the middleware also
+/// starts one Bugsnag session per request — a counter increment on the
+/// ``SessionTracker`` actor, never I/O — and stores it on the request so
+/// events reported during the request carry a `session` block for the
+/// stability score.
 public struct BugsnagMiddleware: AsyncMiddleware {
     private let automaticRequestBreadcrumb: Bool
 
@@ -31,6 +37,9 @@ public struct BugsnagMiddleware: AsyncMiddleware {
                 type: .request,
                 metadata: ["requestId": .string(request.id)]
             )
+        }
+        if let tracker = request.application.bugsnag.service?.sessionTracker {
+            request.bugsnagSession = await tracker.startSession()
         }
         do {
             return try await next.respond(to: request)

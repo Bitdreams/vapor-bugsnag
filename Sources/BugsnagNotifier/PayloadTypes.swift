@@ -183,6 +183,8 @@ public struct BugsnagEvent: Codable, Equatable, Sendable {
     public var user: BugsnagUser?
     public var request: RequestInfo?
     public var breadcrumbs: [Breadcrumb]?
+    /// The session this event occurred in, for stability-score attribution.
+    public var session: BugsnagEventSession?
     public var metaData: [String: [String: JSONValue]]?
     public var groupingHash: String?
 
@@ -197,6 +199,7 @@ public struct BugsnagEvent: Codable, Equatable, Sendable {
         user: BugsnagUser? = nil,
         request: RequestInfo? = nil,
         breadcrumbs: [Breadcrumb]? = nil,
+        session: BugsnagEventSession? = nil,
         metaData: [String: [String: JSONValue]]? = nil,
         groupingHash: String? = nil
     ) {
@@ -210,6 +213,7 @@ public struct BugsnagEvent: Codable, Equatable, Sendable {
         self.user = user
         self.request = request
         self.breadcrumbs = breadcrumbs
+        self.session = session
         self.metaData = metaData
         self.groupingHash = groupingHash
     }
