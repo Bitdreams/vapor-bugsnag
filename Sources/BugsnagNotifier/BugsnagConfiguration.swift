@@ -36,6 +36,10 @@ public struct BugsnagConfiguration: Sendable {
     /// Defaults to the process host name when nil.
     public var hostname: String?
 
+    /// The maximum number of breadcrumbs kept in a trail. When a trail is
+    /// full, the oldest breadcrumb is dropped first. Defaults to 50.
+    public var maxBreadcrumbs: Int
+
     /// The Bugsnag payload version header/body value. `"5"` is the current schema.
     public var payloadVersion: String
 
@@ -65,6 +69,7 @@ public struct BugsnagConfiguration: Sendable {
         notifyEndpoint: URL = BugsnagConfiguration.defaultNotifyEndpoint,
         redactedKeys: Set<String> = [],
         hostname: String? = nil,
+        maxBreadcrumbs: Int = 50,
         payloadVersion: String = "5",
         sendTimeout: TimeInterval = 5,
         synchronous: Bool = false,
@@ -79,6 +84,7 @@ public struct BugsnagConfiguration: Sendable {
         self.notifyEndpoint = notifyEndpoint
         self.redactedKeys = Self.normalize(redactedKeys)
         self.hostname = hostname
+        self.maxBreadcrumbs = maxBreadcrumbs
         self.payloadVersion = payloadVersion
         self.sendTimeout = sendTimeout
         self.synchronous = synchronous
