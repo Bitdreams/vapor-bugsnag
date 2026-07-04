@@ -182,6 +182,7 @@ public struct BugsnagEvent: Codable, Equatable, Sendable {
     public var device: DeviceInfo?
     public var user: BugsnagUser?
     public var request: RequestInfo?
+    public var breadcrumbs: [Breadcrumb]?
     public var metaData: [String: [String: JSONValue]]?
     public var groupingHash: String?
 
@@ -195,6 +196,7 @@ public struct BugsnagEvent: Codable, Equatable, Sendable {
         device: DeviceInfo? = nil,
         user: BugsnagUser? = nil,
         request: RequestInfo? = nil,
+        breadcrumbs: [Breadcrumb]? = nil,
         metaData: [String: [String: JSONValue]]? = nil,
         groupingHash: String? = nil
     ) {
@@ -207,11 +209,13 @@ public struct BugsnagEvent: Codable, Equatable, Sendable {
         self.device = device
         self.user = user
         self.request = request
+        self.breadcrumbs = breadcrumbs
         self.metaData = metaData
         self.groupingHash = groupingHash
     }
 
-    /// Redacts sensitive keys from request headers and metadata, in place.
+    /// Redacts sensitive keys from request headers, metadata, and breadcrumb
+    /// metadata, in place.
     public mutating func redact(keys redactedKeys: Set<String>) {
         if let headers = request?.headers {
             request?.headers = headers.reduce(into: [:]) { result, entry in
@@ -228,6 +232,9 @@ public struct BugsnagEvent: Codable, Equatable, Sendable {
                         : entry.value.redacting(keys: redactedKeys)
                 }
             }
+        }
+        if let breadcrumbs {
+            self.breadcrumbs = breadcrumbs.map { $0.redacting(keys: redactedKeys) }
         }
     }
 }

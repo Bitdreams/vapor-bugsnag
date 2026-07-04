@@ -77,6 +77,10 @@ enum BugsnagEventBuilder {
             )
         }
 
+        // Snapshot copy of the per-request trail ([Breadcrumb] is a Sendable
+        // value type), taken inside request isolation like everything else here.
+        let breadcrumbs = request.bugsnag.breadcrumbs
+
         return BugsnagEvent(
             exceptions: exceptions,
             context: context,
@@ -91,6 +95,7 @@ enum BugsnagEventBuilder {
             device: DeviceInfo.current(hostname: configuration.hostname),
             user: service.userResolver?(request),
             request: makeRequestInfo(from: request),
+            breadcrumbs: breadcrumbs.isEmpty ? nil : breadcrumbs,
             metaData: metaData,
             groupingHash: "\(errorClass)|\(context)"
         )

@@ -56,6 +56,21 @@ Unhandled errors escaping a route handler are reported automatically and rethrow
 - **Release-stage gating**: with `enabledReleaseStages` set, events from other stages are dropped before any POST.
 - **User attribution**: pass a `userResolver` closure to `configure` to extract the authenticated user (e.g. your JWT payload from `req.auth`) into the event's `user` block. It runs inside request isolation.
 
+### Breadcrumbs
+
+Leave breadcrumbs anywhere you have a `Request`; they're attached (oldest first) to every event reported for that request — unhandled middleware reports and deliberate `notify` calls alike:
+
+```swift
+req.bugsnag.leaveBreadcrumb("Card validated", type: .process)
+req.bugsnag.leaveBreadcrumb("Charge attempted", metadata: ["provider": "stripe"])
+```
+
+- **Per-request, not process-global**: the trail lives in `request.storage`, so concurrent requests never share or leak breadcrumbs. It costs nothing when no event is reported.
+- `type` is one of Bugsnag's eight categories (`navigation`, `request`, `process`, `log`, `user`, `state`, `error`, `manual`); the default is `.manual`. Timestamps are recorded automatically and encoded as ISO-8601.
+- The trail is capped at `BugsnagConfiguration.maxBreadcrumbs` (default 50); the oldest breadcrumb is dropped first.
+- Breadcrumb metadata goes through the same redaction as everything else (case-insensitive, any nesting depth).
+- `BugsnagMiddleware` automatically leaves one `request`-type breadcrumb (`"GET /path"`) when a request enters the pipeline, so every event carries at least the incoming request. Disable with `BugsnagMiddleware(automaticRequestBreadcrumb: false)`.
+
 ### Stack traces: thin by default, opt-in throw-site capture
 
 Swift on Linux does not attach a throw-site stack trace to a caught `Error` — by the time the middleware sees it, the frames are unwound. By default, events therefore ship with an empty `stacktrace` and lean on `errorClass`, `message`, `context` (the matched route pattern, e.g. `GET /v1/habits/:id`), request/user metadata, and a `groupingHash` of `errorClass|route` so events group per-endpoint instead of collapsing into one bucket. For an API backend this is enough to diagnose incidents: which endpoint, which user, which error, what status.
