@@ -31,6 +31,15 @@ final class BugsnagMiddlewareTests: XCTestCase {
 
     struct DatabaseExplodedError: Error {}
 
+    struct DiskUnavailableError: Error, LocalizedError {
+        var errorDescription: String? { "disk unavailable" }
+    }
+
+    struct SyncFailedError: BugsnagChainedError, LocalizedError {
+        let underlyingError: (any Error)?
+        var errorDescription: String? { "sync failed" }
+    }
+
     private func withApp(
         configuration: BugsnagConfiguration? = nil,
         transport: (any BugsnagTransport)? = nil,
@@ -136,6 +145,75 @@ final class BugsnagMiddlewareTests: XCTestCase {
             XCTAssertEqual(event.severityReason, .handledError)
             XCTAssertEqual(event.exceptions[0].message, "Habit not found")
             XCTAssertEqual(event.metaData?["app"]?["abortStatus"], .int(404))
+        }
+    }
+
+    // MARK: - Cause chains
+
+    func testChainedErrorReportsCauseChainInOrder() async throws {
+        let transport = MockTransport()
+        try await withApp(transport: transport) { app in
+            app.get("sync") { _ -> HTTPStatus in
+                throw SyncFailedError(underlyingError: DiskUnavailableError())
+            }
+            try await app.testable().test(.GET, "/sync") { response async in
+                XCTAssertEqual(response.status, .internalServerError)
+            }
+
+            let maybeEvent = try await transport.onlyEvent
+            let event = try XCTUnwrap(maybeEvent)
+            XCTAssertEqual(event.exceptions.count, 2)
+            XCTAssertTrue(event.exceptions[0].errorClass.contains("SyncFailedError"))
+            XCTAssertEqual(event.exceptions[0].message, "sync failed")
+            XCTAssertTrue(event.exceptions[1].errorClass.contains("DiskUnavailableError"))
+            XCTAssertEqual(event.exceptions[1].message, "disk unavailable")
+            XCTAssertEqual(event.exceptions.map(\.stacktrace), [[], []])
+
+            // Classification and grouping stay keyed off the primary error.
+            XCTAssertEqual(event.severity, .error)
+            XCTAssertTrue(event.unhandled)
+            XCTAssertEqual(event.severityReason, .unhandledMiddleware)
+            XCTAssertEqual(event.groupingHash, "\(event.exceptions[0].errorClass)|GET /sync")
+        }
+    }
+
+    func testChainedErrorWrappingAbortKeepsPrimarySeverityMapping() async throws {
+        let transport = MockTransport()
+        try await withApp(transport: transport) { app in
+            app.get("wrapped-abort") { _ -> HTTPStatus in
+                // A 4xx Abort as a CAUSE must not downgrade the event: the
+                // AbortError check considers the primary (outermost) error only.
+                throw SyncFailedError(underlyingError: Abort(.notFound, reason: "Habit not found"))
+            }
+            try await app.testable().test(.GET, "/wrapped-abort") { response async in
+                XCTAssertEqual(response.status, .internalServerError)
+            }
+
+            let maybeEvent = try await transport.onlyEvent
+            let event = try XCTUnwrap(maybeEvent)
+            XCTAssertEqual(event.severity, .error)
+            XCTAssertTrue(event.unhandled)
+            XCTAssertEqual(event.severityReason, .unhandledMiddleware)
+            XCTAssertNil(event.metaData?["app"]?["abortStatus"])
+            XCTAssertEqual(event.exceptions.count, 2)
+            XCTAssertEqual(event.exceptions[1].message, "Habit not found")
+        }
+    }
+
+    func testPlainErrorStillProducesExactlyOneException() async throws {
+        let transport = MockTransport()
+        try await withApp(transport: transport) { app in
+            app.get("plain") { _ -> HTTPStatus in
+                throw DatabaseExplodedError()
+            }
+            try await app.testable().test(.GET, "/plain") { response async in
+                XCTAssertEqual(response.status, .internalServerError)
+            }
+
+            let maybeEvent = try await transport.onlyEvent
+            let event = try XCTUnwrap(maybeEvent)
+            XCTAssertEqual(event.exceptions.count, 1)
+            XCTAssertTrue(event.exceptions[0].errorClass.contains("DatabaseExplodedError"))
         }
     }
 
