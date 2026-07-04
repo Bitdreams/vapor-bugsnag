@@ -8,6 +8,9 @@ public struct BugsnagConfiguration: Sendable {
     /// The default Bugsnag ingestion endpoint.
     public static let defaultNotifyEndpoint = URL(string: "https://notify.bugsnag.com/")!
 
+    /// The default Bugsnag session ingestion endpoint.
+    public static let defaultSessionsEndpoint = URL(string: "https://sessions.bugsnag.com/")!
+
     /// The Bugsnag project notifier API key. Never log this.
     public var apiKey: String
 
@@ -25,6 +28,18 @@ public struct BugsnagConfiguration: Sendable {
 
     /// The ingestion endpoint. Override for testing/proxying only.
     public var notifyEndpoint: URL
+
+    /// The session ingestion endpoint. Override for testing/proxying only.
+    public var sessionsEndpoint: URL
+
+    /// When true (the default), the Vapor middleware starts one session per
+    /// HTTP request and a ``SessionTracker`` periodically reports aggregated
+    /// counts to ``sessionsEndpoint``, powering Bugsnag's stability score.
+    /// Set to false to disable session tracking entirely.
+    public var autoCaptureSessions: Bool
+
+    /// How often accumulated session counts are flushed to Bugsnag.
+    public var sessionFlushInterval: TimeInterval
 
     /// Header/metadata keys to redact before encoding (matched case-insensitively).
     /// ``mandatoryRedactedKeys`` are always included in addition to these.
@@ -67,11 +82,14 @@ public struct BugsnagConfiguration: Sendable {
         appVersion: String? = nil,
         appType: String = "vapor",
         notifyEndpoint: URL = BugsnagConfiguration.defaultNotifyEndpoint,
+        sessionsEndpoint: URL = BugsnagConfiguration.defaultSessionsEndpoint,
+        autoCaptureSessions: Bool = true,
         redactedKeys: Set<String> = [],
         hostname: String? = nil,
         maxBreadcrumbs: Int = 50,
         payloadVersion: String = "5",
         sendTimeout: TimeInterval = 5,
+        sessionFlushInterval: TimeInterval = 30,
         synchronous: Bool = false,
         onBeforeNotify: (@Sendable (inout BugsnagEvent) -> Bool)? = nil,
         onDeliveryError: (@Sendable (String) -> Void)? = nil
@@ -82,11 +100,14 @@ public struct BugsnagConfiguration: Sendable {
         self.appVersion = appVersion
         self.appType = appType
         self.notifyEndpoint = notifyEndpoint
+        self.sessionsEndpoint = sessionsEndpoint
+        self.autoCaptureSessions = autoCaptureSessions
         self.redactedKeys = Self.normalize(redactedKeys)
         self.hostname = hostname
         self.maxBreadcrumbs = maxBreadcrumbs
         self.payloadVersion = payloadVersion
         self.sendTimeout = sendTimeout
+        self.sessionFlushInterval = sessionFlushInterval
         self.synchronous = synchronous
         self.onBeforeNotify = onBeforeNotify
         self.onDeliveryError = onDeliveryError

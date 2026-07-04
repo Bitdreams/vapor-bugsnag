@@ -56,6 +56,24 @@ Unhandled errors escaping a route handler are reported automatically and rethrow
 - **Release-stage gating**: with `enabledReleaseStages` set, events from other stages are dropped before any POST.
 - **User attribution**: pass a `userResolver` closure to `configure` to extract the authenticated user (e.g. your JWT payload from `req.auth`) into the event's `user` block. It runs inside request isolation.
 
+### Sessions & stability score
+
+With `autoCaptureSessions` on (the default), `BugsnagMiddleware` starts one Bugsnag session per HTTP request — the server-SDK convention — and a `SessionTracker` actor aggregates them into per-minute counts, POSTed to the sessions endpoint (`https://sessions.bugsnag.com/`, `Bugsnag-Payload-Version: 1.0`) every `sessionFlushInterval` seconds (default 30). Events reported during a request carry a `session` block (`{ id, startedAt, events: { handled, unhandled } }`), so Bugsnag can attribute errors to sessions and compute the [stability score](https://docs.bugsnag.com/product/releases/releases-dashboard/#stability-score).
+
+- Starting a session is a counter increment on an actor — no I/O on the request path; delivery is fire-and-forget with the same `sendTimeout` / `onDeliveryError` semantics as event delivery.
+- Pending counts are flushed automatically on application shutdown; `await app.bugsnag.sessions?.flush()` flushes them on demand.
+- `enabledReleaseStages` gates session delivery exactly like event delivery.
+- Set `autoCaptureSessions: false` to disable session tracking entirely (no per-request session, no `session` block on events, no sessions traffic).
+
+```swift
+app.bugsnag.configure(.init(
+    apiKey: Environment.get("BUGSNAG_KEY")!,
+    releaseStage: app.environment.name,
+    autoCaptureSessions: true,        // default
+    sessionFlushInterval: 30          // seconds, default
+))
+```
+
 ### Breadcrumbs
 
 Leave breadcrumbs anywhere you have a `Request`; they're attached (oldest first) to every event reported for that request — unhandled middleware reports and deliberate `notify` calls alike:
