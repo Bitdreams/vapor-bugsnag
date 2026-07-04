@@ -38,7 +38,7 @@ app.bugsnag.configure(.init(
     appVersion: myBackendVersion,
     redactedKeys: ["x-api-key"]                   // authorization/cookie/password are always redacted
 ))
-app.middleware.use(BugsnagMiddleware())           // BEFORE (outside) ErrorMiddleware
+app.middleware.use(BugsnagMiddleware())           // must sit INSIDE ErrorMiddleware — see below
 
 // deliberate/handled report anywhere with a Request
 await req.bugsnag.notify(SomeError.badThing, severity: .warning,
@@ -46,6 +46,22 @@ await req.bugsnag.notify(SomeError.badThing, severity: .warning,
 ```
 
 Unhandled errors escaping a route handler are reported automatically and rethrown, so Vapor's `ErrorMiddleware` still renders the HTTP response.
+
+### Middleware ordering (important)
+
+`BugsnagMiddleware` must sit **inside** `ErrorMiddleware` — i.e. `ErrorMiddleware` must be *outside* (register it first). `ErrorMiddleware` converts a thrown error into a `Response`; the middleware inside it observes the throw, reports it, and rethrows, so `ErrorMiddleware` still renders the client response. If `BugsnagMiddleware` is placed *outside* `ErrorMiddleware`, the error has already been turned into a `Response` by the time it reaches Bugsnag, so **nothing is reported** (zero events).
+
+- **Default Vapor app:** `ErrorMiddleware` is auto-installed as the outermost middleware, so a plain `app.middleware.use(BugsnagMiddleware())` correctly lands it *inside* — this is the common case and the example above.
+- **If you rebuild the middleware stack** (e.g. `app.middleware = .init()` to control CORS/error ordering yourself), register `BugsnagMiddleware` **after** your `ErrorMiddleware`:
+
+  ```swift
+  app.middleware = .init()
+  app.middleware.use(CORSMiddleware(configuration: ...))
+  app.middleware.use(ErrorMiddleware.default(environment: app.environment))  // your error middleware
+  app.middleware.use(BugsnagMiddleware())                                    // AFTER it → inside it
+  ```
+
+  Remember Vapor's rule: the **first**-registered middleware is the **outermost**.
 
 ### Behavior
 
