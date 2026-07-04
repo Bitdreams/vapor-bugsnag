@@ -56,9 +56,28 @@ Unhandled errors escaping a route handler are reported automatically and rethrow
 - **Release-stage gating**: with `enabledReleaseStages` set, events from other stages are dropped before any POST.
 - **User attribution**: pass a `userResolver` closure to `configure` to extract the authenticated user (e.g. your JWT payload from `req.auth`) into the event's `user` block. It runs inside request isolation.
 
-### Stack traces are thin by design
+### Stack traces: thin by default, opt-in throw-site capture
 
-Swift on Linux does not attach a throw-site stack trace to a caught `Error` — by the time the middleware sees it, the frames are unwound. Events therefore ship with an empty `stacktrace` and lean on `errorClass`, `message`, `context` (the matched route pattern, e.g. `GET /v1/habits/:id`), request/user metadata, and a `groupingHash` of `errorClass|route` so events group per-endpoint instead of collapsing into one bucket. For an API backend this is enough to diagnose incidents: which endpoint, which user, which error, what status.
+Swift on Linux does not attach a throw-site stack trace to a caught `Error` — by the time the middleware sees it, the frames are unwound. By default, events therefore ship with an empty `stacktrace` and lean on `errorClass`, `message`, `context` (the matched route pattern, e.g. `GET /v1/habits/:id`), request/user metadata, and a `groupingHash` of `errorClass|route` so events group per-endpoint instead of collapsing into one bucket. For an API backend this is enough to diagnose incidents: which endpoint, which user, which error, what status.
+
+Where you want more, capture the stack **at the throw site** by opting in per throw:
+
+```swift
+throw DatabaseWriteError().bugsnagTraced()
+
+// or, when re-throwing someone else's error:
+} catch {
+    throw BugsnagTracedError(wrapping: error)
+}
+```
+
+`bugsnagTraced()` wraps the error in a `BugsnagTracedError` that records `Thread.callStackSymbols` at that moment, plus the exact `#fileID`/`#line`/`#function` of the call site as the guaranteed top frame. The middleware (and `req.bugsnag.notify`) then populates the event's `stacktrace` from it. Reporting uses the **wrapped** error for `errorClass`, `message`, severity mapping, and `groupingHash`, so tracing an error never changes how its events group in Bugsnag. Tracing is idempotent — re-wrapping keeps the original throw-site frames — and `BugsnagVapor` forwards `AbortError` through the wrapper, so `throw Abort(.notFound).bugsnagTraced()` still renders a 404.
+
+Set expectations accordingly:
+
+- The top frame (file, line, function) is always exact. The frames below it are **mangled** Swift symbols (`$s...` — demangle with `swift demangle`) with no line numbers, and release builds may lose frames to inlining. On Linux, frames from the app image may show only a return address unless the binary exports symbols; frames are capped at 50.
+- Any error type can supply its own frames instead by conforming to `BugsnagStackTraceProviding` (a `bugsnagStacktrace: [StackFrame]` property).
+- Optional image-level improvement (not configured by this package): build the deployment image with frame pointers enabled — `-Xcc -fno-omit-frame-pointer` (plus `-Xswiftc -Xllvm -Xswiftc -frame-pointer=all` where supported) — and link with `--export-dynamic` so `backtrace_symbols` resolves names instead of bare addresses. Both are deployment-image decisions, documented here as a follow-up only.
 
 ### "Caused by" error chains
 
