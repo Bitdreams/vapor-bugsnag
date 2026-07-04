@@ -16,11 +16,11 @@ enum BugsnagEventBuilder {
         extraMetadata: [String: [String: JSONValue]]? = nil
     ) -> BugsnagEvent {
         let configuration = service.configuration
+        // Severity, unhandled, context, groupingHash, and metadata are all
+        // keyed off the PRIMARY (outermost) error; the cause chain only adds
+        // extra exceptions[] entries.
         let abort = error as? any AbortError
         let errorClass = String(reflecting: type(of: error))
-        let message = abort?.reason
-            ?? (error as? any LocalizedError)?.errorDescription
-            ?? String(describing: error)
 
         let severity: Severity
         let unhandled: Bool
@@ -52,14 +52,18 @@ enum BugsnagEventBuilder {
             metaData["app", default: [:]]["abortStatus"] = .int(Int(abort.status.code))
         }
 
+        // One exception per link of the cause chain (primary first); Bugsnag
+        // renders the trailing entries as "caused by" sections.
+        let exceptions = BugsnagErrorChain.unwrap(error).map { link in
+            BugsnagException(
+                errorClass: String(reflecting: type(of: link)),
+                message: message(for: link),
+                stacktrace: []  // thin by design on Linux; groupingHash compensates
+            )
+        }
+
         return BugsnagEvent(
-            exceptions: [
-                BugsnagException(
-                    errorClass: errorClass,
-                    message: message,
-                    stacktrace: []  // thin by design on Linux; groupingHash compensates
-                )
-            ],
+            exceptions: exceptions,
             context: context,
             severity: severity,
             unhandled: unhandled,
@@ -75,6 +79,15 @@ enum BugsnagEventBuilder {
             metaData: metaData,
             groupingHash: "\(errorClass)|\(context)"
         )
+    }
+
+    /// The human-readable message for one link of the cause chain, using the
+    /// same fallbacks as v1: abort reason, then localized description, then
+    /// the error's default description.
+    private static func message(for error: any Error) -> String {
+        (error as? any AbortError)?.reason
+            ?? (error as? any LocalizedError)?.errorDescription
+            ?? String(describing: error)
     }
 
     private static func makeRequestInfo(from request: Request) -> RequestInfo {
