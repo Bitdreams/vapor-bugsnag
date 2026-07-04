@@ -32,7 +32,7 @@
 ## 2. Target environment
 
 - Swift 5.9+, **strict concurrency enabled**. Package must compile clean with `-strict-concurrency=complete`.
-- Vapor 4 (4.115+), Linux (the consumer runs on containerized Linux). Also builds on macOS for dev.
+- Vapor 4 (4.115+), Linux (the consumer runs on containerized Linux hosts). Also builds on macOS for dev.
 - Dependencies: Vapor (for the `BugsnagVapor` target only). The `BugsnagNotifier` core should depend only on Foundation + an async HTTP client abstraction (prefer `async-http-client` OR accept an injected client protocol so the core stays Vapor-free — your call, but keep the core adapter-agnostic).
 
 ## 3. The Bugsnag API contract (verified — implement exactly this)
@@ -144,7 +144,7 @@ public final class BugsnagMiddleware: AsyncMiddleware {
 }
 ```
 
-- Register this middleware **before** (outside) the app's existing `ErrorMiddleware`, so it observes the error but `ErrorMiddleware` still renders the HTTP response. (When integrating into the consumer backend specifically, verify the exact registration order in that repo's `configure.swift`.)
+- Register this middleware **before** (outside) the app's existing `ErrorMiddleware`, so it observes the error but `ErrorMiddleware` still renders the HTTP response. (When integrating into a consuming app, verify the exact registration order in its `configure.swift`.)
 - Use an **application-level** HTTP client (not `req.client`) inside the detached task, since the request lifecycle may be ending.
 - Timeout the POST (a few seconds) so a hung request can't leak tasks.
 - One POST per event; **no batching** in v1.
@@ -172,7 +172,7 @@ app.bugsnag.configure(.init(
     apiKey: Environment.get("BUGSNAG_KEY")!,
     releaseStage: app.environment.name,
     enabledReleaseStages: ["production", "staging"],
-    appVersion: myBackendVersion,     // read from the app
+    appVersion: myBackendVersion,            // read from the app
     appType: "vapor",
     redactedKeys: ["authorization", "cookie", "password"],
     synchronous: false
@@ -212,5 +212,5 @@ try await req.bugsnag.notify(SomeError.badThing, severity: .warning,
 ---
 
 ### Source reports (evidence, optional reading)
-- `claude/reports/2026-07-04/bugsnag-vapor-integration-researcher-report.md` — feasibility: why custom, the API contract, the middleware/Sendable pattern, the stack-trace limitation.
-- `claude/reports/2026-07-04/bugsnag-reference-notifier-researcher-report.md` — the `bugsnag-go` reference architecture, config surface, event pipeline, delivery model, severity semantics, and what does/doesn't port to Linux.
+- [research-feasibility.md](research-feasibility.md) — feasibility: why custom, the API contract, the middleware/Sendable pattern, the stack-trace limitation.
+- [research-reference-architecture.md](research-reference-architecture.md) — the `bugsnag-go` reference architecture, config surface, event pipeline, delivery model, severity semantics, and what does/doesn't port to Linux.

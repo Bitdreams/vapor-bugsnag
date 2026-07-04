@@ -1,13 +1,13 @@
 ---
 goal: "Identify the best REFERENCE Bugsnag server-side notifier library (any language) to use as an architectural model for a from-scratch Swift/Vapor notifier, and extract a transferable design + API contract that can be handed to another Claude instance as an implementation spec."
-context: ["claude/reports/2026-07-04/bugsnag-vapor-integration-researcher-report.md"]
+context: ["docs/research-feasibility.md"]
 confidence: 87%
 coherence: 🟢
 ---
 
 # Bugsnag Reference Notifier — Architecture to Port to Swift/Vapor
 
-> Builds directly on `claude/reports/2026-07-04/bugsnag-vapor-integration-researcher-report.md`. That report already settled: the Swift/Vapor community package is dead (archived Apr 2024), Bugsnag has no Linux SDK, and the plan is a custom notifier POSTing to `https://notify.bugsnag.com`. **This report does not re-argue that** — it answers "which existing notifier's *design* should we copy, and what exactly is that design."
+> Builds directly on `research-feasibility.md`. That report already settled: the Swift/Vapor community package is dead (archived Apr 2024), Bugsnag has no Linux SDK, and the plan is a custom notifier POSTing to `https://notify.bugsnag.com`. **This report does not re-argue that** — it answers "which existing notifier's *design* should we copy, and what exactly is that design."
 
 ## 1. TL;DR — Chosen Reference
 
@@ -183,7 +183,7 @@ MIT permits studying and porting the design freely with attribution of the licen
 - Bugsnag docs "Writing a notifier" (`docs.bugsnag.com/platforms/writing-a-notifier/`) → points to the Error Reporting API (`developer.smartbear.com/bugsnag/docs/reporting-events-and-sessions`). Nav/render-gated on automated fetch, but the header/endpoint/payload facts are triple-corroborated by bugsnag-go source + the prior report's schema work + the ColdFusion example cited there. (medium-high)
 
 **Prior report (context)**
-- `claude/reports/2026-07-04/bugsnag-vapor-integration-researcher-report.md` — endpoint/headers/payload-v5/Sendable-middleware/stack-trace-on-Linux findings this report builds on. (high)
+- `research-feasibility.md` — endpoint/headers/payload-v5/Sendable-middleware/stack-trace-on-Linux findings this report builds on. (high)
 
 ### Flagged / uncertainties
 - **Payload version 4 vs 5** — best code reference emits `4`; current schema is `5`. Both accepted; verify with one test POST (§4.4). (80%)

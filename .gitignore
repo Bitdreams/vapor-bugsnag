@@ -11,3 +11,9 @@ DerivedData/
 # Env / secrets — never commit BUGSNAG_KEY
 .env
 .env.*
+
+# Claude Code local overlays — org-internal, never commit (repo is public)
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
+claude/

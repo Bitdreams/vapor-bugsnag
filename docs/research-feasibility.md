@@ -1,11 +1,11 @@
 ---
-goal: "Evaluate options for integrating Bugsnag error/crash reporting into the consumer Vapor backend: (a) adopt an existing/maintained integration, or (b) assess feasibility and shape of building our own. Recommend a path."
+goal: "Evaluate options for integrating Bugsnag error/crash reporting into our Vapor backend: (a) adopt an existing/maintained integration, or (b) assess feasibility and shape of building our own. Recommend a path."
 context: []
 confidence: 88%
 coherence: 🟢
 ---
 
-# Bugsnag Error Reporting for the Vapor Backend on Linux
+# Bugsnag Error Reporting for a Vapor Backend on Linux
 
 ## 1. TL;DR Recommendation
 
@@ -29,7 +29,7 @@ Deciding factors, in order of weight:
 | Package | Role | Last activity | Vapor/Swift | Strict concurrency | Verdict |
 |---|---|---|---|---|---|
 | `ml-archive/bugsnag` (was `nodes-vapor/bugsnag`) | Vapor middleware + notifier | **Archived Apr 20, 2024**; last stable **3.1.0 = Feb 26, 2020**; 33 releases, 4.x only reached RC | Badges: Vapor 4 / Swift 5.2 | **None** (predates async/await maturity & Sendable) | ❌ Do not adopt. Unmaintained, RC-only 4.x, no Sendable. Confirms the "poor support" hypothesis. |
-| `bugsnag/bugsnag-cocoa` (official) | Apple crash/error SDK | Actively maintained | `Package.swift` platforms: iOS/macOS/tvOS/watchOS | N/A | ❌ Not usable server-side. **No Linux platform.** Cannot reuse code on Linux container. |
+| `bugsnag/bugsnag-cocoa` (official) | Apple crash/error SDK | Actively maintained | `Package.swift` platforms: iOS/macOS/tvOS/watchOS | N/A | ❌ Not usable server-side. **No Linux platform.** Cannot reuse code on Linux. |
 | Any other Swift-server Bugsnag package/fork | — | None found | — | — | ❌ None exists. `awesome-vapor` still points only at the archived nodes package. |
 | `swift-sentry/swift-sentry` + `SentryVapor` (alternative vendor, aside) | Native Swift → Sentry, SwiftLog backend, Vapor request abstraction | Maintained, community | Server-Swift/Vapor | Modern | ⚠️ Only relevant if switching vendors. Better server-Swift story than Bugsnag, but iOS is already on Bugsnag → not recommended. |
 
