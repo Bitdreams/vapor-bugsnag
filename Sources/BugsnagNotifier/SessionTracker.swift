@@ -30,6 +30,13 @@ public actor SessionTracker {
         self.transport = transport
     }
 
+    deinit {
+        // The loop holds `self` weakly, so it does not keep the actor alive —
+        // but without this it would keep waking on its interval forever if
+        // the tracker were dropped without `shutdown()`.
+        flushLoop?.cancel()
+    }
+
     /// Records the start of a new session (one per HTTP request, per the
     /// server-notifier convention) and returns it so callers can attach it
     /// to events reported during the session. Starts the periodic flush loop
@@ -64,7 +71,9 @@ public actor SessionTracker {
     // MARK: - Flush machinery
 
     private func ensureFlushLoop() {
-        guard flushLoop == nil, !isShutDown else { return }
+        // No background timer in synchronous (test) mode: deliveries are
+        // awaited explicitly there, and a stray loop would race assertions.
+        guard flushLoop == nil, !isShutDown, !configuration.synchronous else { return }
         let interval = configuration.sessionFlushInterval
         guard interval > 0, interval.isFinite else { return }
         flushLoop = Task { [weak self] in
