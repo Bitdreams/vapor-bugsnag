@@ -60,6 +60,28 @@ Unhandled errors escaping a route handler are reported automatically and rethrow
 
 Swift on Linux does not attach a throw-site stack trace to a caught `Error` — by the time the middleware sees it, the frames are unwound. Events therefore ship with an empty `stacktrace` and lean on `errorClass`, `message`, `context` (the matched route pattern, e.g. `GET /v1/habits/:id`), request/user metadata, and a `groupingHash` of `errorClass|route` so events group per-endpoint instead of collapsing into one bucket. For an API backend this is enough to diagnose incidents: which endpoint, which user, which error, what status.
 
+### "Caused by" error chains
+
+Wrapper errors can surface their root cause as separate "caused by" entries in the Bugsnag UI — one `exceptions[]` entry per link, primary error first (the same convention as `bugsnag-go`'s `Unwrap` support). Conform wrapper errors to `BugsnagChainedError`:
+
+```swift
+import BugsnagNotifier
+
+struct SyncFailedError: BugsnagChainedError, LocalizedError {
+    let underlyingError: (any Error)?
+    var errorDescription: String? { "syncing habits failed" }
+}
+
+// in a route handler
+do {
+    try await store.save(habit)
+} catch {
+    throw SyncFailedError(underlyingError: error)  // reported as SyncFailedError, caused by `error`
+}
+```
+
+Chains are followed through `BugsnagChainedError.underlyingError` and, best-effort, through `NSError`'s `NSUnderlyingErrorKey` (the Cocoa convention — useful on Darwin, typically absent on Linux). Traversal is capped at 8 links (`BugsnagErrorChain.unwrap(_:maxDepth:)` is public if you need it directly) and guards against cycles. Severity, `unhandled`, and `groupingHash` remain keyed off the primary (outermost) error, so wrapping an `Abort` does not change how the event is classified or grouped.
+
 ## Payload version
 
 Events are sent with `Bugsnag-Payload-Version: 5` (also as `payloadVersion` in the body), the current schema version. The reference `bugsnag-go` notifier historically sends `4` and the endpoint accepts both. The version is configurable via `BugsnagConfiguration.payloadVersion`.
