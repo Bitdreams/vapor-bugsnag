@@ -10,7 +10,8 @@ final class ErrorChainTests: XCTestCase {
     }
 
     /// Class-based chained error, so links can (pathologically) form a cycle.
-    final class NodeError: BugsnagChainedError {
+    /// `next` is mutated only during single-threaded test setup.
+    final class NodeError: BugsnagChainedError, @unchecked Sendable {
         var next: (any Error)?
         var underlyingError: (any Error)? { next }
     }
@@ -78,7 +79,7 @@ final class ErrorChainTests: XCTestCase {
     func testChainedConformanceTakesPrecedenceOverNSError() {
         /// Conforms to ``BugsnagChainedError`` *and* carries an
         /// `NSUnderlyingErrorKey`; the protocol must win.
-        final class BothError: NSError, BugsnagChainedError {
+        final class BothError: NSError, BugsnagChainedError, @unchecked Sendable {
             var underlyingError: (any Error)? { WrapperError(underlyingError: nil) }
         }
         let error = BothError(
