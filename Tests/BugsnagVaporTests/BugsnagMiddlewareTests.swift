@@ -217,6 +217,128 @@ final class BugsnagMiddlewareTests: XCTestCase {
         }
     }
 
+    // MARK: - Throw-site stack traces (opt-in)
+
+    func testTracedErrorPopulatesStacktraceWithInnerErrorClass() async throws {
+        let transport = MockTransport()
+        try await withApp(transport: transport) { app in
+            app.get("traced") { _ -> HTTPStatus in
+                throw DatabaseExplodedError().bugsnagTraced()
+            }
+            try await app.testable().test(.GET, "/traced") { response async in
+                XCTAssertEqual(response.status, .internalServerError)
+            }
+
+            let maybeEvent = try await transport.onlyEvent
+            let event = try XCTUnwrap(maybeEvent)
+            let exception = event.exceptions[0]
+
+            // Frames were captured at the throw site inside the route closure.
+            XCTAssertFalse(exception.stacktrace.isEmpty)
+            XCTAssertTrue(exception.stacktrace[0].file.contains("BugsnagMiddlewareTests"))
+            XCTAssertGreaterThan(exception.stacktrace[0].lineNumber, 0)
+
+            // Class/message/grouping reflect the WRAPPED error, not the wrapper.
+            XCTAssertTrue(exception.errorClass.contains("DatabaseExplodedError"))
+            XCTAssertFalse(exception.errorClass.contains("BugsnagTracedError"))
+            XCTAssertEqual(event.groupingHash, "\(exception.errorClass)|GET /traced")
+
+            XCTAssertEqual(event.severity, .error)
+            XCTAssertTrue(event.unhandled)
+            XCTAssertEqual(event.severityReason, .unhandledMiddleware)
+        }
+    }
+
+    func testTracedAbortKeepsHTTPStatusAndSeverityMapping() async throws {
+        let transport = MockTransport()
+        try await withApp(transport: transport) { app in
+            app.get("traced-missing") { _ -> HTTPStatus in
+                throw Abort(.notFound, reason: "Habit not found").bugsnagTraced()
+            }
+            // The AbortError forwarding must keep the 404 (not a generic 500).
+            try await app.testable().test(.GET, "/traced-missing") { response async in
+                XCTAssertEqual(response.status, .notFound)
+            }
+
+            let maybeEvent = try await transport.onlyEvent
+            let event = try XCTUnwrap(maybeEvent)
+            XCTAssertEqual(event.severity, .warning)
+            XCTAssertFalse(event.unhandled)
+            XCTAssertEqual(event.severityReason, .handledError)
+            XCTAssertEqual(event.exceptions[0].message, "Habit not found")
+            XCTAssertEqual(event.metaData?["app"]?["abortStatus"], .int(404))
+            XCTAssertFalse(event.exceptions[0].stacktrace.isEmpty)
+        }
+    }
+
+    struct SelfTracingError: Error, BugsnagStackTraceProviding {
+        var bugsnagStacktrace: [StackFrame] {
+            [StackFrame(file: "custom.swift", lineNumber: 7, method: "custom()")]
+        }
+    }
+
+    func testCustomStackTraceProvidingErrorSuppliesItsOwnFrames() async throws {
+        let transport = MockTransport()
+        try await withApp(transport: transport) { app in
+            app.get("custom-traced") { _ -> HTTPStatus in
+                throw SelfTracingError()
+            }
+            try await app.testable().test(.GET, "/custom-traced") { response async in
+                XCTAssertEqual(response.status, .internalServerError)
+            }
+
+            let maybeEvent = try await transport.onlyEvent
+            let event = try XCTUnwrap(maybeEvent)
+            XCTAssertEqual(
+                event.exceptions[0].stacktrace,
+                [StackFrame(file: "custom.swift", lineNumber: 7, method: "custom()")]
+            )
+            // A direct conformer is its own errorClass.
+            XCTAssertTrue(event.exceptions[0].errorClass.contains("SelfTracingError"))
+        }
+    }
+
+    func testTracedChainedErrorCombinesFramesAndCauseChain() async throws {
+        let transport = MockTransport()
+        try await withApp(transport: transport) { app in
+            app.get("traced-chain") { _ -> HTTPStatus in
+                throw SyncFailedError(underlyingError: DiskUnavailableError()).bugsnagTraced()
+            }
+            try await app.testable().test(.GET, "/traced-chain") { response async in
+                XCTAssertEqual(response.status, .internalServerError)
+            }
+
+            let maybeEvent = try await transport.onlyEvent
+            let event = try XCTUnwrap(maybeEvent)
+            // The chain is walked from the unwrapped error; only the primary
+            // exception carries the throw-site frames.
+            XCTAssertEqual(event.exceptions.count, 2)
+            XCTAssertTrue(event.exceptions[0].errorClass.contains("SyncFailedError"))
+            XCTAssertFalse(event.exceptions[0].stacktrace.isEmpty)
+            XCTAssertTrue(event.exceptions[1].errorClass.contains("DiskUnavailableError"))
+            XCTAssertEqual(event.exceptions[1].stacktrace, [])
+            XCTAssertEqual(event.groupingHash, "\(event.exceptions[0].errorClass)|GET /traced-chain")
+        }
+    }
+
+    // Regression: untraced errors still ship stacktrace: [] — this is also
+    // asserted in testUnhandledErrorIsReportedAndRethrown above.
+    func testUntracedErrorStillSendsEmptyStacktrace() async throws {
+        let transport = MockTransport()
+        try await withApp(transport: transport) { app in
+            app.get("plain") { _ -> HTTPStatus in
+                throw DatabaseExplodedError()
+            }
+            try await app.testable().test(.GET, "/plain") { response async in
+                XCTAssertEqual(response.status, .internalServerError)
+            }
+
+            let maybeEvent = try await transport.onlyEvent
+            let event = try XCTUnwrap(maybeEvent)
+            XCTAssertEqual(event.exceptions[0].stacktrace, [])
+        }
+    }
+
     // MARK: - Handled notify
 
     func testDeliberateNotifyReportsHandledEventWithMetadata() async throws {

@@ -16,11 +16,24 @@ enum BugsnagEventBuilder {
         extraMetadata: [String: [String: JSONValue]]? = nil
     ) -> BugsnagEvent {
         let configuration = service.configuration
-        // Severity, unhandled, context, groupingHash, and metadata are all
-        // keyed off the PRIMARY (outermost) error; the cause chain only adds
-        // extra exceptions[] entries.
-        let abort = error as? any AbortError
-        let errorClass = String(reflecting: type(of: error))
+        // Throw-site capture (opt-in): errors conforming to
+        // BugsnagStackTraceProviding — typically via `.bugsnagTraced()` —
+        // supply frames for the primary exception. Severity, unhandled,
+        // context, groupingHash, and metadata are all keyed off the PRIMARY
+        // error after unwrapping the traced wrapper, so tracing never changes
+        // how events group; the cause chain only adds extra exceptions[]
+        // entries.
+        let stacktrace: [StackFrame]
+        let underlying: any Error
+        if let traced = error as? any BugsnagStackTraceProviding {
+            stacktrace = traced.bugsnagStacktrace
+            underlying = (traced as? BugsnagTracedError)?.wrapped ?? traced
+        } else {
+            stacktrace = []  // thin by design on Linux; groupingHash compensates
+            underlying = error
+        }
+        let abort = underlying as? any AbortError
+        let errorClass = String(reflecting: type(of: underlying))
 
         let severity: Severity
         let unhandled: Bool
@@ -53,12 +66,14 @@ enum BugsnagEventBuilder {
         }
 
         // One exception per link of the cause chain (primary first); Bugsnag
-        // renders the trailing entries as "caused by" sections.
-        let exceptions = BugsnagErrorChain.unwrap(error).map { link in
+        // renders the trailing entries as "caused by" sections. The chain is
+        // walked from the unwrapped error, and only the primary exception
+        // carries the throw-site frames.
+        let exceptions = BugsnagErrorChain.unwrap(underlying).enumerated().map { index, link in
             BugsnagException(
                 errorClass: String(reflecting: type(of: link)),
                 message: message(for: link),
-                stacktrace: []  // thin by design on Linux; groupingHash compensates
+                stacktrace: index == 0 ? stacktrace : []
             )
         }
 
