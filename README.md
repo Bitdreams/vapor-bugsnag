@@ -4,10 +4,11 @@ A Bugsnag error-reporting notifier for [Vapor](https://vapor.codes) server apps 
 
 Bugsnag has no Linux SDK and the old community Vapor package is archived, so this is a small, clean-room, pure-HTTP-API integration: an `AsyncMiddleware` catches errors in the request pipeline and POSTs structured events to Bugsnag's Error Reporting API (`https://notify.bugsnag.com`), landing backend errors in the same Bugsnag org as your iOS/mobile crash data.
 
-Two products:
+Three products:
 
 - **`BugsnagNotifier`** — the Vapor-free core: configuration, `Codable`/`Sendable` payload types, a `BugsnagClient` actor, and a `BugsnagTransport` protocol for injected HTTP delivery.
 - **`BugsnagVapor`** — the Vapor 4 adapter: `BugsnagMiddleware`, `app.bugsnag` / `req.bugsnag` extensions, request snapshotting, and an `AsyncHTTPClient`-backed transport.
+- **`BugsnagFluent`** — optional Fluent helper (`BugsnagNotifier` + `FluentKit` only): `model.tracedSave(on:)` / `tracedCreate` / `tracedUpdate`, which capture the controller's file:line on otherwise-stackless DB errors. See [Tracing DB mutations](#tracing-db-mutations-bugsnagfluent).
 
 Compiles clean in Swift 6 language mode (full data-race safety, a superset of `-strict-concurrency=complete`).
 
@@ -127,6 +128,28 @@ Set expectations accordingly:
 - The top frame (file, line, function) is always exact. The frames below it are **mangled** Swift symbols (`$s...` — demangle with `swift demangle`) with no line numbers, and release builds may lose frames to inlining. On Linux, frames from the app image may show only a return address unless the binary exports symbols; frames are capped at 50.
 - Any error type can supply its own frames instead by conforming to `BugsnagStackTraceProviding` (a `bugsnagStacktrace: [StackFrame]` property).
 - Optional image-level improvement (not configured by this package): build the deployment image with frame pointers enabled — `-Xcc -fno-omit-frame-pointer` (plus `-Xswiftc -Xllvm -Xswiftc -frame-pointer=all` where supported) — and link with `--export-dynamic` so `backtrace_symbols` resolves names instead of bare addresses. Both are deployment-image decisions, documented here as a follow-up only.
+
+#### Tracing DB mutations (`BugsnagFluent`)
+
+Fluent/PostgresNIO errors are the classic stackless case: a failing `save`/`create`/`update` throws a `PSQLError` with no throw-site frames, so the event lands in Bugsnag pointing at library internals rather than the code that issued the write. The optional `BugsnagFluent` product wraps the mutation for you and captures the **caller's** file:line as the guaranteed top frame:
+
+```swift
+import BugsnagFluent
+
+func store(_ req: Request) async throws -> Entry {
+    let entry = try req.content.decode(Entry.self)
+    try await entry.tracedSave(on: req.db) // captures THIS line on failure
+    return entry
+}
+```
+
+`tracedSave(on:)` — and its siblings `tracedCreate(on:)` / `tracedUpdate(on:)` — simply calls the underlying Fluent method and, if it throws, rethrows the error wrapped in a `BugsnagTracedError` (the same wrapper as `bugsnagTraced()`). Because the helper's `file`/`line`/`function` parameters default to `#fileID`/`#line`/`#function`, they resolve to the controller call site, not to `BugsnagFluent`, so the recorded top frame is the exact line that issued the failing write. Everything from throw-site capture still applies: the **wrapped** error drives `errorClass`/`message`/severity/grouping, and wrapping is idempotent.
+
+`BugsnagFluent` is a separate product (depending only on `BugsnagNotifier` + `FluentKit`) precisely so `BugsnagVapor` never forces a Fluent dependency on Vapor apps that don't use it — add it only if you use Fluent:
+
+```swift
+.product(name: "BugsnagFluent", package: "vapor-bugsnag"),
+```
 
 ### "Caused by" error chains
 

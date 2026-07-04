@@ -9,10 +9,12 @@ let package = Package(
     products: [
         .library(name: "BugsnagNotifier", targets: ["BugsnagNotifier"]),
         .library(name: "BugsnagVapor", targets: ["BugsnagVapor"]),
+        .library(name: "BugsnagFluent", targets: ["BugsnagFluent"]),
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.115.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.19.0"),
+        .package(url: "https://github.com/vapor/fluent-kit.git", from: "1.49.0"),
     ],
     targets: [
         .target(name: "BugsnagNotifier"),
@@ -24,6 +26,13 @@ let package = Package(
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
             ]
         ),
+        .target(
+            name: "BugsnagFluent",
+            dependencies: [
+                "BugsnagNotifier",
+                .product(name: "FluentKit", package: "fluent-kit"),
+            ]
+        ),
         .testTarget(
             name: "BugsnagNotifierTests",
             dependencies: ["BugsnagNotifier"]
@@ -33,6 +42,14 @@ let package = Package(
             dependencies: [
                 "BugsnagVapor",
                 .product(name: "XCTVapor", package: "vapor"),
+            ]
+        ),
+        .testTarget(
+            name: "BugsnagFluentTests",
+            dependencies: [
+                "BugsnagFluent",
+                .product(name: "FluentKit", package: "fluent-kit"),
+                .product(name: "XCTFluent", package: "fluent-kit"),
             ]
         ),
     ]
