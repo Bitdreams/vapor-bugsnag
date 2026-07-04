@@ -15,6 +15,7 @@ extension Application {
 
         struct Service: Sendable {
             let client: BugsnagClient
+            let sessionTracker: SessionTracker?
             let configuration: BugsnagConfiguration
             let userResolver: (@Sendable (Request) -> BugsnagUser?)?
         }
@@ -47,16 +48,28 @@ extension Application {
             )
             let service = Service(
                 client: BugsnagClient(configuration: configuration, transport: transport),
+                sessionTracker: configuration.autoCaptureSessions
+                    ? SessionTracker(configuration: configuration, transport: transport)
+                    : nil,
                 configuration: configuration,
                 userResolver: userResolver
             )
             application.storage[Key.self] = service
-            application.lifecycle.use(FlushOnShutdown(client: service.client))
+            application.lifecycle.use(
+                FlushOnShutdown(client: service.client, sessionTracker: service.sessionTracker)
+            )
         }
 
         /// The configured client, if ``configure(_:transport:userResolver:)`` has run.
         public var client: BugsnagClient? {
             service?.client
+        }
+
+        /// The session tracker, if configured with `autoCaptureSessions` on.
+        /// Use `await app.bugsnag.sessions?.flush()` to deliver pending
+        /// session counts on demand.
+        public var sessions: SessionTracker? {
+            service?.sessionTracker
         }
 
         var service: Service? {
@@ -65,11 +78,14 @@ extension Application {
     }
 }
 
-/// Drains in-flight deliveries before the application shuts down.
+/// Drains in-flight deliveries and pending session counts before the
+/// application shuts down.
 private struct FlushOnShutdown: LifecycleHandler {
     let client: BugsnagClient
+    let sessionTracker: SessionTracker?
 
     func shutdownAsync(_ application: Application) async {
         await client.flush()
+        await sessionTracker?.shutdown()
     }
 }

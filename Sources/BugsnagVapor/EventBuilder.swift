@@ -81,6 +81,20 @@ enum BugsnagEventBuilder {
         // value type), taken inside request isolation like everything else here.
         let breadcrumbs = request.bugsnag.breadcrumbs
 
+        // Attribute the event to the request's session (stability score):
+        // bump the handled/unhandled counter on the stored session, then
+        // snapshot it into the event. All inside request isolation.
+        var eventSession: BugsnagEventSession?
+        if var session = request.bugsnagSession {
+            if unhandled {
+                session.unhandledCount += 1
+            } else {
+                session.handledCount += 1
+            }
+            request.bugsnagSession = session
+            eventSession = session.eventSession
+        }
+
         return BugsnagEvent(
             exceptions: exceptions,
             context: context,
@@ -96,6 +110,7 @@ enum BugsnagEventBuilder {
             user: service.userResolver?(request),
             request: makeRequestInfo(from: request),
             breadcrumbs: breadcrumbs.isEmpty ? nil : breadcrumbs,
+            session: eventSession,
             metaData: metaData,
             groupingHash: "\(errorClass)|\(context)"
         )
